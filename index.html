@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=1fef50892f5d5633f92b54d94bd2e857"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 <style>
 :root{
@@ -532,6 +533,13 @@ svg.map .lbl{paint-order:stroke;stroke:var(--surface);stroke-width:3.5px;stroke-
 .osm-attr{position:absolute;right:56px;bottom:12px;font-size:10.5px;line-height:1;padding:3px 6px;border-radius:3px;background:color-mix(in srgb, var(--surface) 82%, transparent);color:var(--muted)!important;text-decoration:none;z-index:2;pointer-events:auto}
 #pubwrap .osm-attr{bottom:auto;top:calc(96px + env(safe-area-inset-top,0px));right:12px}
 .wmap .osm-attr{right:52px;bottom:10px}
+
+/* kakao base layer */
+.kmap{position:absolute;inset:0;z-index:0}
+svg.map.kk{position:relative;z-index:1;pointer-events:none;background:transparent!important;cursor:default}
+svg.map.kk [data-id],svg.map.kk [data-sg]{pointer-events:auto}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .kmap{filter:invert(.92) hue-rotate(180deg) brightness(.9) contrast(.92)}}
+:root[data-theme="dark"] .kmap{filter:invert(.92) hue-rotate(180deg) brightness(.9) contrast(.92)}
 </style>
 </head>
 <body>
@@ -916,18 +924,42 @@ const BASE=(()=>{let s=`<rect x="-3000" y="-3000" width="${W+6000}" height="${H+
 const OSM_ATTR='<a class="osm-attr" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>';
 const labelsSVG=(k,tr)=>LABELS.map(l=>{const [x,y]=P(l[1],l[2]);return `<text class="lbl${l[3]?" big":""}" transform="translate(${x.toFixed(0)} ${y.toFixed(0)}) scale(${k.toFixed(3)})" text-anchor="middle">${tr?tr(l[0]):l[0]}</text>`}).join("");
 
+/* ---- Kakao Map base layer: SVG overlay follows the Kakao view ---- */
+function kakaoize(m,svg,o,setVB,upp,ins){
+  const K=window.kakao.maps; svg.classList.add("kk"); svg.setAttribute("preserveAspectRatio","none");
+  const host=document.createElement("div"); host.className="kmap"; svg.parentElement.insertBefore(host,svg);
+  const v0=m.vb, c0=toLL(v0.x+v0.w/2,v0.y+v0.h/2);
+  const km=new K.Map(host,{center:new K.LatLng(c0[0],c0[1]),level:6}); m.km=km; km.setMaxLevel(10);
+  const LL=(a,b)=>new K.LatLng(a,b);
+  const sync=()=>{if(!host.clientWidth||!host.clientHeight) return; const b=km.getBounds(),sw=b.getSouthWest(),ne=b.getNorthEast();
+    const [x0,y0]=P(ne.getLat(),sw.getLng()),[x1,y1]=P(sw.getLat(),ne.getLng()); m.vb={x:x0,y:y0,w:x1-x0,h:y1-y0}; setVB(); m.draw()};
+  let raf=0; const later=()=>{if(raf) return; raf=requestAnimationFrame(()=>{raf=0; sync()})};
+  ["bounds_changed","idle","zoom_changed"].forEach(ev=>K.event.addListener(km,ev,later));
+  K.event.addListener(km,"dragstart",()=>{if(o.onDrag) o.onDrag()});
+  K.event.addListener(km,"click",e=>{ if(o.picking&&o.picking()){o.onPick(+e.latLng.getLat().toFixed(6),+e.latLng.getLng().toFixed(6));return} if(o.onBlank) o.onBlank()});
+  const lvlFor=w=>{sync(); const cur=upp(), want=w/Math.max(1,host.clientWidth); return Math.max(1,Math.min(10,km.getLevel()+Math.round(Math.log2(want/cur))))};
+  const place=(lat,lng)=>{km.setCenter(LL(lat,lng)); const i=ins(); if(i.left||i.bottom){const pr=km.getProjection(),pt=pr.containerPointFromCoords(LL(lat,lng)); km.setCenter(pr.coordsFromContainerPoint(new K.Point(pt.x-i.left/2,pt.y+i.bottom/2)))}};
+  let pending=null; const ready=()=>host.clientWidth>0&&host.clientHeight>0;
+  m.center=(lat,lng,w)=>{ if(!ready()){pending=()=>m.center(lat,lng,w);return} const ww=w||(m.vb.w>520?520:0); if(ww) km.setLevel(lvlFor(ww),{animate:false}); place(lat,lng); sync()};
+  m.pan=(lat,lng)=>{ if(!ready()){pending=()=>m.pan(lat,lng);return} place(lat,lng); sync()};
+  m.fit=pts=>{ if(!pts.length) return; if(!ready()){pending=()=>m.fit(pts);return} const b=new K.LatLngBounds(); pts.forEach(p=>b.extend(LL(p.lat,p.lng))); const i=ins(); km.setBounds(b,48,48,48+(i.bottom||0),48+(i.left||0)); sync()};
+  m.zoom=f=>{km.setLevel(Math.max(1,Math.min(10,km.getLevel()+(f<1?-1:1))),{animate:true})};
+  pending=()=>m.center(c0[0],c0[1],v0.w);
+  new ResizeObserver(()=>{ if(!ready()) return; const c=km.getCenter(); km.relayout(); if(pending){const p=pending; pending=null; p()} else {km.setCenter(c); sync()} }).observe(host);
+  if(ready()){const p=pending; pending=null; p()}
+}
 function makeMap(svg,o){
-  const m={vb:{x:0,y:0,w:W,h:H}};
-  svg.innerHTML=BASE+'<g class="labels"></g><g class="routes"></g><g class="sites"></g><g class="over"></g>';
-  if(svg.parentElement&&!svg.parentElement.querySelector(".osm-attr")) svg.insertAdjacentHTML("afterend",OSM_ATTR);
+  const m={vb:{x:0,y:0,w:W,h:H}}, KK=!!(window.kakao&&window.kakao.maps&&window.kakao.maps.Map);
+  svg.innerHTML=(KK?"":BASE)+'<g class="labels"></g><g class="routes"></g><g class="sites"></g><g class="over"></g>';
+  if(!KK&&svg.parentElement&&!svg.parentElement.querySelector(".osm-attr")) svg.insertAdjacentHTML("afterend",OSM_ATTR);
   const gL=svg.querySelector(".labels"),gR=svg.querySelector(".routes"),gS=svg.querySelector(".sites"),gO=svg.querySelector(".over");
   const setVB=()=>svg.setAttribute("viewBox",`${m.vb.x} ${m.vb.y} ${m.vb.w} ${m.vb.h}`);
   const upp=()=>{const r=svg.getBoundingClientRect(); return r.width?Math.max(m.vb.w/r.width,m.vb.h/r.height):1};
   m.draw=()=>{ if(!svg.getBoundingClientRect().width) return; const k=upp(), C=2*Math.PI*8, sel=o.selected?o.selected():null, dim=o.dim?o.dim():null;
     gS.innerHTML=o.sites().map(s=>{const [x,y]=P(s.lat,s.lng), l=o.level(s), c=COLOR[l], f=Math.max(.03,Math.min(1,o.value(s))), isSel=s.id===sel, dm=dim&&!dim.has(s.id);
       return `<g class="site${isSel?" sel":""}${dm?" dim":""}" data-id="${s.id}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${(k*(isSel?1.45:1)).toFixed(3)})"><title>${esc(title(s))}</title>${isSel?'<circle class="halo" r="15"/>':""}<circle class="track" r="8"/><circle r="8" fill="none" stroke="${c}" stroke-width="3.4" stroke-dasharray="${(C*f).toFixed(2)} ${C.toFixed(2)}" transform="rotate(-90)" stroke-linecap="round"/>${l==="broken"?`<text y="3.6" text-anchor="middle" font-size="9" font-weight="700" fill="${c}">!</text>`:`<circle r="3.4" fill="${c}"/>`}</g>`}).join("");
-    gL.innerHTML=labelsSVG(k,o.label); gR.innerHTML=o.routes?o.routes(k):""; gO.innerHTML=o.overlay?o.overlay(k):"";};
-  const clamp=()=>{const v=m.vb; v.w=Math.min(Math.max(v.w,120),W*1.3); v.h=v.w*H/W; v.x=Math.min(Math.max(v.x,-v.w*.5),W-v.w*.5); v.y=Math.min(Math.max(v.y,-v.h*.5),H-v.h*.5)};
+    gL.innerHTML=KK?"":labelsSVG(k,o.label); gR.innerHTML=o.routes?o.routes(k):""; gO.innerHTML=o.overlay?o.overlay(k):"";};
+  const clamp=()=>{if(KK)return;const v=m.vb; v.w=Math.min(Math.max(v.w,120),W*1.3); v.h=v.w*H/W; v.x=Math.min(Math.max(v.x,-v.w*.5),W-v.w*.5); v.y=Math.min(Math.max(v.y,-v.h*.5),H-v.h*.5)};
   const sp=(cx,cy)=>{const pt=svg.createSVGPoint(); pt.x=cx; pt.y=cy; return pt.matrixTransform(svg.getScreenCTM().inverse())};
   m.zoom=(f,cx,cy)=>{const v=m.vb; let px,py; if(cx==null){px=v.x+v.w/2;py=v.y+v.h/2}else{const p=sp(cx,cy);px=p.x;py=p.y}
     const nw=Math.min(Math.max(v.w*f,120),W*1.3),r=nw/v.w; v.x=px-(px-v.x)*r; v.y=py-(py-v.y)*r; v.w=nw; v.h=nw*H/W; clamp(); setVB(); m.draw()};
@@ -939,7 +971,7 @@ function makeMap(svg,o){
   m.fit=(pts)=>{if(!pts.length) return; const xs=pts.map(p=>P(p.lat,p.lng)); const x0=Math.min(...xs.map(p=>p[0])),x1=Math.max(...xs.map(p=>p[0])),y0=Math.min(...xs.map(p=>p[1])),y1=Math.max(...xs.map(p=>p[1]));
     const r=svg.getBoundingClientRect(),i=ins(),fx=r.width?r.width/Math.max(80,r.width-i.left):1,fy=r.height?r.height/Math.max(80,r.height-i.bottom):1;
     const pad=60, w=Math.max((x1-x0+pad*2)*fx,(y1-y0+pad*2)*fy*W/H,300); m.vb={x:0,y:0,w,h:w*H/W}; setVB(); place((x0+x1)/2,(y0+y1)/2); clamp(); setVB(); m.draw()};
-  svg.addEventListener("wheel",e=>{e.preventDefault(); m.zoom(e.deltaY>0?1.15:1/1.15,e.clientX,e.clientY)},{passive:false});
+  svg.addEventListener("wheel",e=>{if(KK)return;e.preventDefault(); m.zoom(e.deltaY>0?1.15:1/1.15,e.clientX,e.clientY)},{passive:false});
   const ptrs=new Map(); let down=null,pinch=null;
   svg.addEventListener("pointerdown",e=>{ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); svg.setPointerCapture(e.pointerId);
     if(ptrs.size===2){const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y)}; down=null; return}
@@ -947,7 +979,7 @@ function makeMap(svg,o){
   svg.addEventListener("pointermove",e=>{if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pinch&&ptrs.size===2){const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); if(d>0){m.zoom(pinch.d/d,(a.x+b.x)/2,(a.y+b.y)/2); pinch.d=d} return}
     if(!down) return; const dx=e.clientX-down.x,dy=e.clientY-down.y; if(!down.moved&&Math.hypot(dx,dy)<5) return; down.moved=true; svg.classList.add("dragging"); if(o.onDrag) o.onDrag();
-    const k=upp(); m.vb.x=down.vx-dx*k; m.vb.y=down.vy-dy*k; clamp(); setVB()});
+    if(KK) return; const k=upp(); m.vb.x=down.vx-dx*k; m.vb.y=down.vy-dy*k; clamp(); setVB()});
   const up=e=>{ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; if(!down) return; const d=down; down=null; svg.classList.remove("dragging");
     if(d.moved){m.draw(); return}
     if(o.picking&&o.picking()){const p=sp(e.clientX,e.clientY); o.onPick(...toLL(p.x,p.y)); return}
@@ -956,6 +988,7 @@ function makeMap(svg,o){
   svg.parentElement.querySelectorAll(".zoom button").forEach(b=>b.addEventListener("click",()=>m.zoom(b.dataset.z==="in"?1/1.4:1.4)));
   new ResizeObserver(()=>m.draw()).observe(svg);
   m.vb=o.vb||{x:330,y:180,w:860,h:860*H/W}; clamp(); setVB(); if(o.label) m.label=o.label;
+  if(KK) kakaoize(m,svg,o,setVB,upp,ins);
   return m;
 }
 
