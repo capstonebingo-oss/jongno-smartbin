@@ -8,6 +8,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=1fef50892f5d5633f92b54d94bd2e857"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>window.FB_CFG={"apiKey": "AIzaSyCNopC22AYHHkqBeyuQKg9DyOd7st4Tv1c", "authDomain": "jongno-smartbin-b5d89.firebaseapp.com", "projectId": "jongno-smartbin-b5d89", "storageBucket": "jongno-smartbin-b5d89.firebasestorage.app", "messagingSenderId": "696066711538", "appId": "1:696066711538:web:a0d7f896588664e9ca956b"};
+/* 관리자 계정 이메일 목록: 바꾸려면 여기와 Firestore 보안 규칙을 함께 고치세요 */
+window.FB_ADMINS=["admin@jongno-bin.kr"];</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 <style>
 :root{
@@ -540,6 +544,10 @@ svg.map.kk{position:relative;z-index:1;pointer-events:none;background:transparen
 svg.map.kk [data-id],svg.map.kk [data-sg]{pointer-events:auto}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .kmap{filter:invert(.92) hue-rotate(180deg) brightness(.9) contrast(.92)}}
 :root[data-theme="dark"] .kmap{filter:invert(.92) hue-rotate(180deg) brightness(.9) contrast(.92)}
+
+#gate .f{max-width:360px;margin:0 auto}
+#gate .f label{text-align:left}
+#g-logout{margin-left:-4px}
 </style>
 </head>
 <body>
@@ -552,7 +560,7 @@ svg.map.kk [data-id],svg.map.kk [data-sg]{pointer-events:auto}
         <span class="seg" id="speed"><button data-s="1" aria-pressed="true">실시간</button><button data-s="60">60배</button><button data-s="600">600배</button></span>
         <button class="btn sm" id="clock-now">현재로</button></div>
       <span class="gsep" aria-hidden="true"></span>
-      <span class="guser" id="g-user">관리자</span>
+      <span class="guser" id="g-user">관리자</span><button class="btn sm hidden" id="g-logout" type="button">로그아웃</button>
       <a class="btn sm" href="#worker">미화원 앱</a>
       <a class="btn sm" href="#map">시민용 지도</a>
     </div>
@@ -1526,7 +1534,7 @@ $("#ft-rules").addEventListener("submit",async e=>{e.preventDefault();const f=e.
   try{await saveCfg(c);$("#r-thr").value=c.thr;$("#r-thr-o").textContent=c.thr+"%";fillDepots();toast("운영 기준을 저장했습니다.");tick()}catch(err){fail()}});
 async function renderAdminInfo(){const el=$("#ft-admin");
   el.innerHTML=`<div class="grid g2" style="max-width:980px"><div class="card"><h2>현재 접속 계정</h2><dl class="kv"><dt>권한</dt><dd>${S.canAdmin?"관리자 (편집 권한)":"조회"}</dd><dt>모드</dt><dd>${S.mode==="live"?"실데이터 저장":"미리보기 (저장 안 됨)"}</dd><dt>이름</dt><dd id="me-name">-</dd></dl>
-    <p class="note mt">관리자 추가와 해제는 이 페이지의 공유 메뉴에서 합니다. 편집 권한을 받은 사람은 이 화면을 쓸 수 있고, 보기 권한만 있는 사람은 시민용 지도와 QR 신고 화면만 씁니다.</p></div>
+    ${window.FB?`<p class="note mt">로그인 계정: ${esc(S.user||"")}<br>관리자 계정은 index.html의 FB_ADMINS와 Firestore 보안 규칙에서 정합니다. 미화원 계정은 Firebase Authentication에서 st번호@jongno-bin.kr 형식으로 만듭니다.</p><div class="row mt"><button class="btn sm" data-seed="staff">예시 담당자 8명 등록</button><button class="btn sm" data-seed="reports">예시 민원 48건 넣기</button></div>`:`<p class="note mt">관리자 추가와 해제는 이 페이지의 공유 메뉴에서 합니다. 편집 권한을 받은 사람은 이 화면을 쓸 수 있고, 보기 권한만 있는 사람은 시민용 지도와 QR 신고 화면만 씁니다.</p>`}</div>
    <div class="card"><h2>저장된 데이터</h2><dl class="kv"><dt>민원</dt><dd>${S.reports.length}건</dd><dt>담당자</dt><dd>${S.staff.length}명</dd><dt>수거 일정</dt><dd>${S.schedules.length}건</dd><dt>수거 기록</dt><dd>${S.logs.length}건</dd><dt>QR 기록</dt><dd>${Object.keys(S.qr).length}곳 (나머지는 가상 초기값)</dd><dt>시설 정보 수정</dt><dd>${Object.keys(S.fac).length}곳</dd></dl></div>
    <div class="card" style="grid-column:1/-1"><h2>데이터 출처와 가정</h2><p class="note" style="margin:0">쓰레기통 위치는 2025년 종로구 가로쓰레기통 전체 현황(364대, 148곳)을 지오코딩한 자료입니다. 모든 쓰레기통을 태양광 압축형 스마트 쓰레기통으로 교체했다고 가정하고, 적재량, 압축, 배터리, 장비 이상은 시간대별 유동 패턴에 따라 만든 가상 센서 값입니다. 정기 수거는 지점별 하루 또는 이틀 간격으로 가정했습니다. 담당자와 과거 민원은 프로토타입용 예시입니다.</p></div></div>`;
   if(userCap&&userCap.me){try{const me=await userCap.me();if(me&&me.name)$("#me-name").textContent=me.name}catch(e){}}}
@@ -1716,7 +1724,7 @@ function pubOverlay(k){let s="";
     s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rr.toFixed(1)}" fill="var(--r3)" opacity=".13"/><g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${k})">${md.heading!=null?`<path d="M0 0 L-10 -24 A26 26 0 0 1 10 -24 Z" fill="var(--r3)" opacity=".3" transform="rotate(${md.heading.toFixed(0)})"/>`:""}<circle r="10" fill="#fff" opacity=".95"/><circle r="7" fill="${S.geo==="sim"?"var(--r2)":"var(--r3)"}"/></g>`}
   return s}
 function applyStatic(){document.documentElement.lang=LANG; $("#p-title").textContent=t("title"); $("#locate").setAttribute("aria-label",t("locate")); $("#locate").title=t("locate");
-  $("#to-admin").textContent=t("admin"); $("#to-admin").classList.toggle("hidden",!S.canAdmin);
+  $("#to-admin").textContent=t("admin"); $("#to-admin").classList.add("hidden");
   $("#lang").innerHTML=LANGS.map(([c,n])=>`<option value="${c}"${c===LANG?" selected":""}>${n}</option>`).join("");
   $("#pub-legend").innerHTML=["ok","mid","full","broken"].map(l=>`<span><i class="dot" style="background:${COLOR[l]}"></i>${t(l)}</span>`).join("");
   if(S.view&&S.view.app==="public") document.title=t("title")}
@@ -1963,7 +1971,9 @@ function workerMapOpts(){return {
 function wHeader(t,sub){$("#w-title").textContent=t;$("#w-sub").textContent=sub||"";$("#w-sync").textContent=S.mode==="live"?"실시간 연동":"미리보기"}
 function renderWorker(full){
   const C=$("#w-content"),mw=$("#w-mapwrap"),tabs=$("#w-tabs");
-  if(!S.canAdmin){wHeader("환경미화원 화면","");mw.classList.add("hidden");tabs.classList.add("hidden");
+  if(window.FB&&!S.canAdmin&&S.role!=="worker"){wHeader("환경미화원 로그인","");mw.classList.add("hidden");tabs.classList.add("hidden");
+    put(C,`<div class="wcard">${loginHTML("환경미화원 계정으로 로그인하세요","예: st3")}</div>`);return}
+  if(!S.canAdmin&&S.role!=="worker"){wHeader("환경미화원 화면","");mw.classList.add("hidden");tabs.classList.add("hidden");
     put(C,`<div class="wcard"><h3 class="wh">편집 권한이 필요합니다</h3><p class="wmeta" style="margin-top:6px">이 프로토타입에서는 페이지 편집 권한이 있는 계정으로 열어야 수거 기록을 남길 수 있습니다.</p></div>`);return}
   if(WK.want&&S.staff.some(x=>x.id===WK.want)){WK.staffId=WK.want;WK.want=null;try{localStorage.setItem("jn-worker",WK.staffId)}catch(e){}}
   const me=wMe();
@@ -2063,7 +2073,7 @@ function wMeHTML(me){const today=dayKey(simNow()),lg=S.logs.filter(l=>l.staffId=
   return `<div class="wcard"><div class="whead"><span class="wnum" style="width:44px;height:44px;font-size:17px">${esc((me.name||"?").slice(0,1))}</span><div><h3 class="wh">${esc(me.name)}</h3><p class="wmeta">${esc(me.shift)}조 (${me.shift==="오후"?"13~22시":"06~15시"}) · ${esc(me.status||"근무")}</p></div></div>
     <dl class="wkv" style="margin-top:14px"><dt>담당 구역</dt><dd>${esc((me.zones||[]).join(", ")||"-")}</dd><dt>연락처</dt><dd class="num">${esc(me.phone||"-")}</dd></dl></div>
    <div class="wcard"><p class="wlab">오늘 실적</p><div class="wstat"><div><b>${new Set(lg.map(l=>l.siteId)).size}</b><span>수거 지점</span></div><div><b>${lg.reduce((x,l)=>x+(l.units||[]).length,0)}</b><span>수거한 칸</span></div><div><b>${rc}</b><span>처리 민원</span></div></div></div>
-   <div class="wbtns"><button class="wbtn" data-w="switch">담당자 변경</button><a class="wbtn" href="#collection">관리 시스템</a></div>`}
+   <div class="wbtns">${window.FB&&S.role==="worker"?'<button class="wbtn" data-w="logout">로그아웃</button>':'<button class="wbtn" data-w="switch">담당자 변경</button>'}<a class="wbtn" href="#collection">관리 시스템</a></div>`}
 
 /* ---- actions ---- */
 function wStartNav(sid){const a=wAssign(),s=SITE[sid];if(!s)return;const from=wPos(a)||{lat:s.lat,lng:s.lng};
@@ -2148,6 +2158,7 @@ WC.addEventListener("click",e=>{
   else if(act==="compback"){WK.compSel=null;renderWorker(true)}
   else if(act==="startcomp")wCompSave(a,"처리중");
   else if(act==="donecomp")wCompSave(a,"처리완료");
+  else if(act==="logout"){fbLogout()}
   else if(act==="switch"){WK.staffId=null;try{localStorage.removeItem("jn-worker")}catch(err){}wSimStop();wGpsStop();WK.pos=null;renderWorker(true)}});
 function enterWorker(staff){ if(staff) WK.want=staff;
   if(!maps.worker) maps.worker=makeMap($("#map-worker"),workerMapOpts());
@@ -2286,7 +2297,51 @@ function sitFocusGroup(g){S.sitSel=g.id;S.sitTab="list";renderSiting(true);if(!m
 function demo(){S.mode="demo";S.canAdmin=true;$("#g-user").textContent="미리보기";const g=genSample(Date.now());S.staff=g.staff;S.reports=g.reports;
   const b=$("#banner");b.textContent="체험판입니다. 담당자와 민원은 예시이며, 바꾼 내용은 새로고침하면 사라집니다.";b.classList.remove("hidden");recompute();route()}
 recompute(); route(); schedule();
+/* ================= Firebase (GitHub Pages version) ================= */
+function loginHTML(msg,ph){return `<form class="f fb-login" autocomplete="on"><p class="note" style="margin:0">${msg}</p>
+  <label>아이디(이메일)<input type="text" name="email" autocomplete="username" placeholder="${ph}" required style="width:100%"></label>
+  <label>비밀번호<input type="password" name="pw" autocomplete="current-password" required style="width:100%"></label>
+  <p class="fb-err warn hidden" style="margin:0"></p><button class="btn primary" type="submit">로그인</button></form>`}
+function fbLogout(){try{firebase.auth().signOut()}catch(e){}}
+function gateHTML(){return S.role==="worker"?`<h2>관리자 화면은 관리자 계정만 볼 수 있습니다</h2><p class="note">지금은 환경미화원 계정(${esc(S.user)})으로 로그인되어 있습니다.</p><p class="row" style="justify-content:center"><a class="btn" href="#worker">미화원 화면으로</a><button class="btn" type="button" data-fb="logout">로그아웃</button></p>`
+  :`<h2>관리자 로그인</h2><div style="text-align:left;margin-top:16px">${loginHTML("관리자 계정으로 로그인하면 관리 기능을 쓸 수 있습니다.","예: admin")}</div><p class="note" style="margin-top:16px"><a href="#map">시민용 지도로 이동</a></p>`}
+const FB_ERR={"auth/invalid-credential":"아이디 또는 비밀번호가 맞지 않습니다.","auth/wrong-password":"아이디 또는 비밀번호가 맞지 않습니다.","auth/user-not-found":"아이디 또는 비밀번호가 맞지 않습니다.","auth/invalid-email":"아이디 형식을 확인하세요.","auth/too-many-requests":"시도가 너무 많습니다. 잠시 후 다시 해 주세요.","auth/network-request-failed":"인터넷 연결을 확인하세요."};
+document.addEventListener("submit",e=>{const f=e.target; if(!f.classList||!f.classList.contains("fb-login")) return; e.preventDefault();
+  let em=f.email.value.trim().toLowerCase(); if(em&&!em.includes("@")) em+="@jongno-bin.kr"; const er=f.querySelector(".fb-err"), bt=f.querySelector("button[type=submit]"); bt.disabled=true; er.classList.add("hidden");
+  firebase.auth().signInWithEmailAndPassword(em,f.pw.value).then(()=>{toast("로그인했습니다.")}).catch(err=>{er.textContent=FB_ERR[err&&err.code]||("로그인하지 못했습니다. ("+(err&&err.code||"오류")+")");er.classList.remove("hidden");bt.disabled=false})});
+document.addEventListener("click",async e=>{const lo=e.target.closest('[data-fb="logout"],#g-logout'); if(lo){fbLogout();return}
+  const sd=e.target.closest("[data-seed]"); if(!sd||!window.FB||!S.canAdmin) return; const g=genSample(simNow()); const kind=sd.dataset.seed;
+  if(kind==="staff"&&S.staff.length&&!confirmSeed("담당자")) return; sd.disabled=true;
+  try{const b=db.batch(); (kind==="staff"?g.staff:g.reports).forEach(x=>b.set(db.collection(kind==="staff"?"staff":"reports").doc(x.id),stripId(x))); await b.commit(); toast(kind==="staff"?"예시 담당자를 등록했습니다.":"예시 민원을 넣었습니다.")}catch(err){fail()} sd.disabled=false});
+function confirmSeed(){toast("이미 담당자가 등록되어 있습니다.");return false}
+function fbBoot(){
+  firebase.initializeApp(window.FB_CFG); db=firebase.firestore(); window.FB=true; S.mode="live"; S.canAdmin=false; S.role=null;
+  const bn=$("#banner"); const to=setTimeout(()=>{bn.textContent="데이터 서버에 연결하지 못했습니다. 인터넷 연결을 확인하세요.";bn.classList.remove("hidden")},10000);
+  const ok=()=>{clearTimeout(to);bn.classList.add("hidden")};
+  const sub=(col,fn,q)=>(q||db.collection(col)).onSnapshot(snap=>{fn(snap.docs.filter(d=>d.exists).map(d=>({id:d.id,...d.data()})));if(!snap.metadata.fromCache)ok();tick()},err=>{console.warn("[fb]",col,err&&err.code)});
+  sub("sites",L=>{const n={};L.forEach(d=>{n[d.id]={u:d.u||{}}});DB=n});
+  sub("reports",L=>{S.reports=L.map(normKind)},db.collection("reports").orderBy("createdAt","desc").limit(800));
+  sub("qr",L=>{const n={};L.forEach(d=>{n[d.id]=d});S.qr=n});
+  sub("facility",L=>{const n={};L.forEach(d=>{n[d.id]=d});S.fac=n});
+  db.doc("config/main").onSnapshot(sn=>{ok();if(sn.exists){S.cfg={...CFG0,...sn.data()};$("#r-thr").value=S.cfg.thr;$("#r-thr-o").textContent=S.cfg.thr+"%";fillDepots()}tick()},()=>{});
+  db.doc("config/siting").onSnapshot(sn=>{if(sn.exists){S.siting=(sn.data()||{}).g||{}}if(S.page==="siting")renderSiting(true)},()=>{});
+  let staffSubs=[];
+  firebase.auth().onAuthStateChanged(u=>{staffSubs.forEach(f=>f()); staffSubs=[];
+    const em=((u&&u.email)||"").toLowerCase(); S.user=em;
+    S.role=(window.FB_ADMINS||[]).includes(em)?"admin":/^st\d+@jongno-bin\.kr$/.test(em)?"worker":(u?"none":null);
+    S.canAdmin=S.role==="admin"; if(S.role==="worker"){WK.staffId=em.split("@")[0];WK.want=null} else if(!S.canAdmin){WK.staffId=null}
+    $("#g-user").textContent=S.role==="admin"?"관리자 · "+em.split("@")[0]:S.role==="worker"?"미화원 · "+em.split("@")[0]:"로그인 필요"; $("#g-logout").classList.toggle("hidden",!u);
+    $("#gate").innerHTML=gateHTML();
+    if(S.role==="admin"||S.role==="worker"){
+      staffSubs.push(sub("staff",L=>{S.staff=L.sort((a,b)=>a.id.localeCompare(b.id))}));
+      staffSubs.push(sub("schedules",L=>{S.schedules=L},db.collection("schedules").orderBy("createdAt","desc").limit(60)));
+      staffSubs.push(sub("logs",L=>{S.logs=L},db.collection("logs").orderBy("at","desc").limit(1000)));
+    } else {S.staff=[];S.schedules=[];S.logs=[]}
+    if(u&&S.role==="none") toast("등록되지 않은 계정입니다. 관리자에게 권한을 요청하세요.");
+    route()});
+}
 (async function boot(){
+  if(window.FB_CFG&&window.firebase&&firebase.initializeApp){try{fbBoot()}catch(e){console.error(e);demo()}return}
   if(!window.claude||typeof window.claude.use!=="function"){demo();return}
   try{[db,userCap,downloads]=await Promise.all([window.claude.use("db"),window.claude.use("user"),window.claude.use("downloads")])}catch(e){db=null}
   if(!db){demo();return}
