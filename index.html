@@ -1724,7 +1724,7 @@ function pubOverlay(k){let s="";
     s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rr.toFixed(1)}" fill="var(--r3)" opacity=".13"/><g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${k})">${md.heading!=null?`<path d="M0 0 L-10 -24 A26 26 0 0 1 10 -24 Z" fill="var(--r3)" opacity=".3" transform="rotate(${md.heading.toFixed(0)})"/>`:""}<circle r="10" fill="#fff" opacity=".95"/><circle r="7" fill="${S.geo==="sim"?"var(--r2)":"var(--r3)"}"/></g>`}
   return s}
 function applyStatic(){document.documentElement.lang=LANG; $("#p-title").textContent=t("title"); $("#locate").setAttribute("aria-label",t("locate")); $("#locate").title=t("locate");
-  $("#to-admin").textContent=t("admin"); $("#to-admin").classList.add("hidden");
+  $("#to-admin").textContent=t("admin"); $("#to-admin").classList.toggle("hidden",!S.canAdmin);
   $("#lang").innerHTML=LANGS.map(([c,n])=>`<option value="${c}"${c===LANG?" selected":""}>${n}</option>`).join("");
   $("#pub-legend").innerHTML=["ok","mid","full","broken"].map(l=>`<span><i class="dot" style="background:${COLOR[l]}"></i>${t(l)}</span>`).join("");
   if(S.view&&S.view.app==="public") document.title=t("title")}
